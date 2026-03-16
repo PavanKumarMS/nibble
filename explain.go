@@ -16,7 +16,7 @@ import (
 //	  bit  6 → ECE:               false (0)
 //	  ...
 func Explain(src []byte, schema any, opts ...Option) (string, error) {
-	o := applyOptions(opts)
+	bigEndian := parseBigEndian(opts)
 
 	rv := reflect.ValueOf(schema)
 	if rv.Kind() == reflect.Ptr {
@@ -49,13 +49,13 @@ func Explain(src []byte, schema any, opts ...Option) (string, error) {
 
 	for i := range s.Fields {
 		cf := &s.Fields[i]
-		raw := readBits(src, cf.BitOffset, cf.BitWidth, o.bigEndian)
+		raw := readBits(src, cf.BitOffset, cf.BitWidth, bigEndian)
 
 		for j := 0; j < cf.BitWidth; j++ {
 			streamPos := cf.BitOffset + j
 			byteIdx := streamPos / 8
 			bitIdx := streamPos % 8
-			if o.bigEndian {
+			if bigEndian {
 				bitIdx = 7 - bitIdx
 			}
 			annots[key{byteIdx, bitIdx}] = annotation{

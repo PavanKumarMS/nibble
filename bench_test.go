@@ -6,7 +6,7 @@ import (
 	"github.com/PavanKumarMS/nibble"
 )
 
-// ── nibble benchmarks ──────────────────────────────────────────────────────
+// ── variadic API (1 alloc for []Option backing array) ─────────────────────
 
 func BenchmarkUnmarshal_TCPFlags(b *testing.B) {
 	data := []byte{0x12}
@@ -43,6 +43,68 @@ func BenchmarkMarshal_GamePacket(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = nibble.Marshal(&pkt, nibble.LittleEndian)
+	}
+}
+
+// ── named BE/LE API (0 allocs Unmarshal, 1 alloc Marshal for output buf) ──
+
+func BenchmarkUnmarshalBE_TCPFlags(b *testing.B) {
+	data := []byte{0x12}
+	var flags TCPFlags
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = nibble.UnmarshalBE(data, &flags)
+	}
+}
+
+func BenchmarkMarshalBE_TCPFlags(b *testing.B) {
+	flags := TCPFlags{ACK: true, SYN: true}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = nibble.MarshalBE(&flags)
+	}
+}
+
+func BenchmarkUnmarshalLE_GamePacket(b *testing.B) {
+	data := []byte{0x4B, 0x96}
+	var pkt GamePacket
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = nibble.UnmarshalLE(data, &pkt)
+	}
+}
+
+func BenchmarkMarshalLE_GamePacket(b *testing.B) {
+	pkt := GamePacket{IsAlive: true, WeaponID: 5, TeamID: 2, Health: 300}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = nibble.MarshalLE(&pkt)
+	}
+}
+
+// ── MarshalInto: zero-alloc marshal with caller-supplied buffer ────────────
+
+func BenchmarkMarshalInto_TCPFlags(b *testing.B) {
+	flags := TCPFlags{ACK: true, SYN: true}
+	buf := make([]byte, 1)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = nibble.MarshalInto(buf, &flags, true)
+	}
+}
+
+func BenchmarkMarshalInto_GamePacket(b *testing.B) {
+	pkt := GamePacket{IsAlive: true, WeaponID: 5, TeamID: 2, Health: 300}
+	buf := make([]byte, 2)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = nibble.MarshalInto(buf, &pkt, false)
 	}
 }
 

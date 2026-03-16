@@ -5,15 +5,24 @@ import (
 	"reflect"
 )
 
-// Unmarshal decodes src into the struct pointed to by dst.
-// dst must be a non-nil pointer to a struct whose fields carry `bits:"N"` tags.
-// Fields are decoded in declaration order.
+// Unmarshal decodes src into the struct pointed to by dst using the supplied
+// byte-order option (default: LittleEndian).
 //
-// The struct schema is parsed and cached on the first call per type, so
-// subsequent calls pay no reflection or string-parsing cost.
+// For a zero-allocation hot path use UnmarshalBE or UnmarshalLE directly.
 func Unmarshal(src []byte, dst any, opts ...Option) error {
-	o := applyOptions(opts)
+	return unmarshal(src, dst, parseBigEndian(opts))
+}
 
+// UnmarshalBE decodes src into dst using BigEndian (MSB-first) bit order.
+// Zero allocations.
+func UnmarshalBE(src []byte, dst any) error { return unmarshal(src, dst, true) }
+
+// UnmarshalLE decodes src into dst using LittleEndian (LSB-first) bit order.
+// Zero allocations.
+func UnmarshalLE(src []byte, dst any) error { return unmarshal(src, dst, false) }
+
+// unmarshal is the allocation-free core shared by all public entry points.
+func unmarshal(src []byte, dst any, bigEndian bool) error {
 	rv := reflect.ValueOf(dst)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("nibble: Unmarshal requires a non-nil pointer, got %T", dst)
@@ -39,7 +48,7 @@ func Unmarshal(src []byte, dst any, opts ...Option) error {
 		cf := &s.Fields[i]
 
 		var raw uint64
-		if o.bigEndian {
+		if bigEndian {
 			raw = readBitsBE(src, cf.BitOffset, cf.BitWidth)
 		} else {
 			raw = readBitsLE(src, cf.BitOffset, cf.BitWidth)
@@ -54,7 +63,6 @@ func Unmarshal(src []byte, dst any, opts ...Option) error {
 			fv.SetUint(raw)
 
 		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			// Sign-extend using pre-computed masks — no per-call bit arithmetic.
 			var signed int64
 			if raw&cf.SignBit != 0 {
 				signed = int64(raw | cf.SignExtMask)
@@ -68,4 +76,18 @@ func Unmarshal(src []byte, dst any, opts ...Option) error {
 		}
 	}
 	return nil
+}
+
+// signExtend extends an n-bit two's-complement value to int64.
+// Kept for use by any external callers; the hot path uses pre-computed masks.
+func signExtend(raw uint64, n int) int64 {
+	if n == 64 {
+		return int64(raw)
+	}
+	signBit := uint64(1) << (n - 1)
+	if raw&signBit != 0 {
+		mask := ^((signBit << 1) - 1)
+		return int64(raw | mask)
+	}
+	return int64(raw)
 }

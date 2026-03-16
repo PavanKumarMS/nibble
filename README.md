@@ -30,13 +30,13 @@ type TCPFlags struct {
     FIN bool `bits:"1"`
 }
 
-// Decode a raw byte (0x12 = SYN + ACK)
+// Decode a raw byte (0x12 = SYN + ACK) — zero allocations
 var flags TCPFlags
-nibble.Unmarshal([]byte{0x12}, &flags, nibble.BigEndian)
+nibble.UnmarshalBE([]byte{0x12}, &flags)
 // flags → {ACK:true SYN:true}
 
-// Encode back
-data, _ := nibble.Marshal(&flags, nibble.BigEndian)
+// Encode back — one allocation (the returned []byte)
+data, _ := nibble.MarshalBE(&flags)
 // data → [0x12]
 
 // Human-readable breakdown
@@ -85,23 +85,57 @@ Fields are packed in **declaration order**. Bit positions within a byte follow t
 
 Signed integers use two's complement encoding automatically.
 
+## Performance
+
+nibble uses reflection with schema caching and byte-granularity bit I/O.
+Benchmarked on an i7-10510U (Go 1.26, `go test -bench=. -benchmem`):
+
+| Function | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| `UnmarshalBE` (TCPFlags, 1 byte) | 114 | **0** | **0** |
+| `UnmarshalLE` (GamePacket, 2 bytes) | 64 | **0** | **0** |
+| `MarshalBE` (TCPFlags, 1 byte) | 119 | 1 | 1 |
+| `MarshalLE` (GamePacket, 2 bytes) | 84 | 2 | 1 |
+| `MarshalInto` (TCPFlags, caller buf) | 107 | **0** | **0** |
+| `MarshalInto` (GamePacket, caller buf) | 69 | **0** | **0** |
+| manual unmarshal (TCPFlags) | 0.27 | 0 | 0 |
+
+nibble is ~400–500x slower than manual bit manipulation — the unavoidable
+cost of reflection (`reflect.Value.SetUint` etc.) — but produces **zero
+allocations** for all Unmarshal and `MarshalInto` calls.
+
+The single allocation in `MarshalBE`/`MarshalLE` is the returned `[]byte`
+itself. Use `MarshalInto` with a pooled or stack-allocated buffer to
+eliminate it entirely.
+
+At 100,000 packets/second nibble uses less than 2% of a single CPU core —
+acceptable for the vast majority of production workloads. For
+latency-critical packet-processing loops, use manual bit manipulation.
+nibble is designed for correctness, safety, and developer productivity.
+
 ## API reference
 
-### `Unmarshal`
+### `Unmarshal` / `UnmarshalBE` / `UnmarshalLE`
 
 ```go
-func Unmarshal(src []byte, dst any, opts ...Option) error
+func Unmarshal(src []byte, dst any, opts ...Option) error  // variadic
+func UnmarshalBE(src []byte, dst any) error                // 0 allocs
+func UnmarshalLE(src []byte, dst any) error                // 0 allocs
 ```
 
 Decodes `src` into the struct pointed to by `dst`.
 
-### `Marshal`
+### `Marshal` / `MarshalBE` / `MarshalLE` / `MarshalInto`
 
 ```go
-func Marshal(src any, opts ...Option) ([]byte, error)
+func Marshal(src any, opts ...Option) ([]byte, error)              // variadic
+func MarshalBE(src any) ([]byte, error)                            // 1 alloc
+func MarshalLE(src any) ([]byte, error)                            // 1 alloc
+func MarshalInto(dst []byte, src any, bigEndian bool) (int, error) // 0 allocs
 ```
 
-Encodes the struct `src` into a minimal byte slice.
+Encodes `src` into bytes. `MarshalInto` writes into a caller-supplied buffer
+(must be large enough) and returns the number of bytes written.
 
 ### `Explain`
 

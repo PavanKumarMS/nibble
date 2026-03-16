@@ -16,34 +16,38 @@
 //	}
 //
 //	flags := TCPFlags{SYN: true, ACK: true}
-//	data, _ := nibble.Marshal(&flags, nibble.BigEndian)
+//	data, _ := nibble.MarshalBE(&flags)
 //	var out TCPFlags
-//	nibble.Unmarshal(data, &out, nibble.BigEndian)
+//	nibble.UnmarshalBE(data, &out)
 package nibble
 
-// Option configures encoding/decoding behaviour.
-type Option func(*options)
+// Option selects the bit-packing byte order.
+//
+// It is a concrete uint8 type (not a function) so that passing it as a
+// variadic argument does not cause the options struct to escape to the heap.
+type Option uint8
 
-type options struct {
-	bigEndian bool
-}
+const (
+	// LittleEndian (the default) packs the first struct field into the
+	// least-significant bits of the first byte.
+	LittleEndian Option = 0
 
-func applyOptions(opts []Option) options {
-	o := options{}
-	for _, opt := range opts {
-		opt(&o)
+	// BigEndian packs the first struct field into the most-significant bits
+	// of the first byte (network byte order). Use for TCP, UDP, DNS, etc.
+	BigEndian Option = 1
+)
+
+// parseBigEndian extracts the bigEndian bool from a variadic Option slice
+// without allocating (no pointer-to-struct, no function calls through
+// interface/func values).
+func parseBigEndian(opts []Option) bool {
+	for _, o := range opts {
+		if o == BigEndian {
+			return true
+		}
 	}
-	return o
+	return false
 }
-
-// BigEndian packs the first struct field into the most-significant bits of the
-// first byte (network byte order). This is the correct choice for most
-// internet protocols (TCP, UDP, DNS, …).
-var BigEndian Option = func(o *options) { o.bigEndian = true }
-
-// LittleEndian (the default) packs the first struct field into the
-// least-significant bits of the first byte.
-var LittleEndian Option = func(o *options) { o.bigEndian = false }
 
 // FieldDiff records a single field that changed between two structs.
 type FieldDiff struct {
