@@ -1,69 +1,99 @@
 package nibble
 
-// readBit returns the bit at stream position pos.
-//
-// LittleEndian (bigEndian=false):
-//
-//	bit 0 of stream = LSB (bit 0) of byte 0
-//	bit 8 of stream = LSB (bit 0) of byte 1
-//
-// BigEndian (bigEndian=true):
-//
-//	bit 0 of stream = MSB (bit 7) of byte 0
-//	bit 8 of stream = MSB (bit 7) of byte 1
-func readBit(data []byte, pos int, bigEndian bool) byte {
-	byteIdx := pos / 8
-	bitIdx := pos % 8
+// readBits reads n bits from stream position pos.
+func readBits(data []byte, pos, n int, bigEndian bool) uint64 {
 	if bigEndian {
-		bitIdx = 7 - bitIdx
+		return readBitsBE(data, pos, n)
 	}
-	return (data[byteIdx] >> bitIdx) & 1
+	return readBitsLE(data, pos, n)
 }
 
-// readBits reads n consecutive bits from the stream starting at pos and
-// assembles them into a uint64.
-//
-// LittleEndian: first bit read becomes LSB of the returned value.
-// BigEndian:    first bit read becomes MSB of the returned value.
-func readBits(data []byte, pos, n int, bigEndian bool) uint64 {
+// writeBits writes n bits of value into data at stream position pos.
+func writeBits(data []byte, pos, n int, value uint64, bigEndian bool) {
+	if bigEndian {
+		writeBitsBE(data, pos, n, value)
+	} else {
+		writeBitsLE(data, pos, n, value)
+	}
+}
+
+// readBitsLE reads n bits starting at stream bit-position pos.
+// Processes up to 8 bits per iteration instead of 1, eliminating
+// per-bit division and modulo in the hot path.
+// First bit consumed → LSB of returned value.
+func readBitsLE(data []byte, pos, n int) uint64 {
 	var result uint64
-	for i := 0; i < n; i++ {
-		bit := uint64(readBit(data, pos+i, bigEndian))
-		if bigEndian {
-			result = (result << 1) | bit
-		} else {
-			result |= bit << i
+	done := 0
+	for done < n {
+		byteIdx := (pos + done) / 8
+		bitInByte := (pos + done) % 8
+		chunk := 8 - bitInByte // bits remaining in this byte
+		if chunk > n-done {
+			chunk = n - done
 		}
+		mask := uint64((1 << chunk) - 1)
+		result |= ((uint64(data[byteIdx]) >> bitInByte) & mask) << done
+		done += chunk
 	}
 	return result
 }
 
-// writeBit sets or clears the bit at stream position pos.
-func writeBit(data []byte, pos int, bit byte, bigEndian bool) {
-	byteIdx := pos / 8
-	bitIdx := pos % 8
-	if bigEndian {
-		bitIdx = 7 - bitIdx
+// readBitsBE reads n bits starting at stream bit-position pos in BigEndian
+// mode (stream bit 0 → MSB of byte 0).
+// First bit consumed → MSB of returned value.
+func readBitsBE(data []byte, pos, n int) uint64 {
+	var result uint64
+	done := 0
+	for done < n {
+		byteIdx := (pos + done) / 8
+		bitInByte := (pos + done) % 8
+		physBit := 7 - bitInByte   // physical bit within the byte (0=LSB)
+		chunk := physBit + 1       // bits available from here toward LSB
+		if chunk > n-done {
+			chunk = n - done
+		}
+		shift := physBit - chunk + 1
+		mask := uint64((1 << chunk) - 1)
+		result = (result << chunk) | ((uint64(data[byteIdx]) >> shift) & mask)
+		done += chunk
 	}
-	if bit == 1 {
-		data[byteIdx] |= 1 << bitIdx
-	} else {
-		data[byteIdx] &^= 1 << bitIdx
+	return result
+}
+
+// writeBitsLE writes n bits of value into data starting at stream bit-position
+// pos. LSB of value → lowest stream position.
+func writeBitsLE(data []byte, pos, n int, value uint64) {
+	done := 0
+	for done < n {
+		byteIdx := (pos + done) / 8
+		bitInByte := (pos + done) % 8
+		chunk := 8 - bitInByte
+		if chunk > n-done {
+			chunk = n - done
+		}
+		mask := byte((1 << chunk) - 1)
+		bits := byte((value >> done) & uint64(mask))
+		data[byteIdx] = (data[byteIdx] &^ (mask << bitInByte)) | (bits << bitInByte)
+		done += chunk
 	}
 }
 
-// writeBits writes n bits of value into the stream starting at pos.
-//
-// LittleEndian: LSB of value is written to the lowest stream position.
-// BigEndian:    MSB of value is written to the lowest stream position.
-func writeBits(data []byte, pos, n int, value uint64, bigEndian bool) {
-	for i := 0; i < n; i++ {
-		var bit byte
-		if bigEndian {
-			bit = byte((value >> (n - 1 - i)) & 1)
-		} else {
-			bit = byte((value >> i) & 1)
+// writeBitsBE writes n bits of value into data starting at stream bit-position
+// pos in BigEndian mode. MSB of value → lowest stream position.
+func writeBitsBE(data []byte, pos, n int, value uint64) {
+	done := 0
+	for done < n {
+		byteIdx := (pos + done) / 8
+		bitInByte := (pos + done) % 8
+		physBit := 7 - bitInByte
+		chunk := physBit + 1
+		if chunk > n-done {
+			chunk = n - done
 		}
-		writeBit(data, pos+i, bit, bigEndian)
+		shift := physBit - chunk + 1
+		mask := byte((1 << chunk) - 1)
+		bits := byte((value >> (n - done - chunk)) & uint64(mask))
+		data[byteIdx] = (data[byteIdx] &^ (mask << shift)) | (bits << shift)
+		done += chunk
 	}
 }

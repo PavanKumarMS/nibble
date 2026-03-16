@@ -6,7 +6,7 @@ import (
 )
 
 // Diff compares two structs of the same type and returns a slice of FieldDiff
-// for every field whose value changed.  a and b must be structs (or pointers
+// for every field whose value changed. a and b must be structs (or pointers
 // to structs) of identical types.
 func Diff(a, b any) ([]FieldDiff, error) {
 	ra := reflect.ValueOf(a)
@@ -20,25 +20,26 @@ func Diff(a, b any) ([]FieldDiff, error) {
 	}
 
 	if ra.Kind() != reflect.Struct || rb.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("bitpack: Diff requires two structs or pointers to structs")
+		return nil, fmt.Errorf("nibble: Diff requires two structs or pointers to structs")
 	}
 	if ra.Type() != rb.Type() {
-		return nil, fmt.Errorf("bitpack: Diff requires both arguments to have the same type, got %s and %s",
+		return nil, fmt.Errorf("nibble: Diff requires both arguments to have the same type, got %s and %s",
 			ra.Type(), rb.Type())
 	}
 
-	fields, err := parseFields(ra.Type())
+	s, err := getSchema(ra.Type())
 	if err != nil {
 		return nil, err
 	}
 
 	var diffs []FieldDiff
-	for _, fi := range fields {
-		va := ra.Field(fi.Index).Interface()
-		vb := rb.Field(fi.Index).Interface()
+	for i := range s.Fields {
+		cf := &s.Fields[i]
+		va := ra.Field(cf.Index).Interface()
+		vb := rb.Field(cf.Index).Interface()
 		if !reflect.DeepEqual(va, vb) {
 			diffs = append(diffs, FieldDiff{
-				Field:  fi.Name,
+				Field:  cf.Name,
 				Before: va,
 				After:  vb,
 			})
