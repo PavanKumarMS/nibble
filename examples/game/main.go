@@ -1,12 +1,12 @@
 // Command game demonstrates encoding and decoding a compact game-state packet
-// with bitpack.
+// with nibble.
 package main
 
 import (
 	"fmt"
 	"log"
 
-	bitpack "github.com/pavankumarms/nibble"
+	"github.com/PavanKumarMS/nibble"
 )
 
 // GamePacket is a 16-bit packed game-state message.
@@ -31,11 +31,11 @@ func main() {
 		Health:   420,
 	}
 
-	if err := bitpack.Validate(&pkt); err != nil {
+	if err := nibble.Validate(&pkt); err != nil {
 		log.Fatalf("invalid packet: %v", err)
 	}
 
-	data, err := bitpack.Marshal(&pkt, bitpack.LittleEndian)
+	data, err := nibble.Marshal(&pkt, nibble.LittleEndian)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,13 +43,13 @@ func main() {
 
 	// ── Decode it back ───────────────────────────────────────────────────
 	var decoded GamePacket
-	if err := bitpack.Unmarshal(data, &decoded, bitpack.LittleEndian); err != nil {
+	if err := nibble.Unmarshal(data, &decoded, nibble.LittleEndian); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Decoded: %+v\n", decoded)
 
 	// ── Show an annotated breakdown ───────────────────────────────────────
-	explanation, err := bitpack.Explain(data, GamePacket{}, bitpack.LittleEndian)
+	explanation, err := nibble.Explain(data, GamePacket{}, nibble.LittleEndian)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func main() {
 	updated := decoded
 	updated.Health -= 100
 
-	diffs, err := bitpack.Diff(decoded, updated)
+	diffs, err := nibble.Diff(decoded, updated)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func main() {
 
 	// ── Demonstrate overflow detection ────────────────────────────────────
 	bad := GamePacket{WeaponID: 20} // 20 > 15, overflows 4 bits
-	if err := bitpack.Validate(&bad); err != nil {
+	if err := nibble.Validate(&bad); err != nil {
 		fmt.Printf("\nValidation caught: %v\n", err)
 	}
 }

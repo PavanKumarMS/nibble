@@ -1,19 +1,19 @@
-# bitpack
+# nibble
 
 **Declarative bit-level binary encoding for Go using struct tags.**
 
-Working with binary protocols often means hand-rolling bit-shift arithmetic scattered across hundreds of lines.  `bitpack` flips that around: you describe your packed format once with `bits:"N"` struct tags and the library handles all masking, shifting, sign-extension, endianness, and validation automatically.
+Working with binary protocols often means hand-rolling bit-shift arithmetic scattered across hundreds of lines. `nibble` flips that around: you describe your packed format once with `bits:"N"` struct tags and the library handles all masking, shifting, sign-extension, endianness, and validation automatically.
 
 ## Installation
 
 ```bash
-go get github.com/pavankumarms/nibble
+go get github.com/PavanKumarMS/nibble
 ```
 
 Import as:
 
 ```go
-import bitpack "github.com/pavankumarms/nibble"
+import "github.com/PavanKumarMS/nibble"
 ```
 
 ## Quick start — TCP flags
@@ -32,15 +32,15 @@ type TCPFlags struct {
 
 // Decode a raw byte (0x12 = SYN + ACK)
 var flags TCPFlags
-bitpack.Unmarshal([]byte{0x12}, &flags, bitpack.BigEndian)
+nibble.Unmarshal([]byte{0x12}, &flags, nibble.BigEndian)
 // flags → {ACK:true SYN:true}
 
 // Encode back
-data, _ := bitpack.Marshal(&flags, bitpack.BigEndian)
+data, _ := nibble.Marshal(&flags, nibble.BigEndian)
 // data → [0x12]
 
 // Human-readable breakdown
-explanation, _ := bitpack.Explain([]byte{0x12}, TCPFlags{}, bitpack.BigEndian)
+explanation, _ := nibble.Explain([]byte{0x12}, TCPFlags{}, nibble.BigEndian)
 fmt.Print(explanation)
 ```
 
@@ -67,7 +67,7 @@ type GamePacket struct {
 }
 ```
 
-Fields are packed in **declaration order**.  Bit positions within a byte follow the selected endianness option.
+Fields are packed in **declaration order**. Bit positions within a byte follow the selected endianness option.
 
 ### Supported field types
 
@@ -117,7 +117,7 @@ Returns a human-readable annotation of which bytes and bits correspond to which 
 func Validate(src any) error
 ```
 
-Checks that every field value fits within its declared bit width.  Returns `ErrFieldOverflow` on the first violation found.
+Checks that every field value fits within its declared bit width. Returns `ErrFieldOverflow` on the first violation found.
 
 ### `Diff`
 
@@ -138,15 +138,15 @@ type FieldDiff struct {
 ### Options
 
 ```go
-bitpack.BigEndian    // first field → MSB (network byte order)
-bitpack.LittleEndian // first field → LSB (default)
+nibble.BigEndian    // first field → MSB (network byte order)
+nibble.LittleEndian // first field → LSB (default)
 ```
 
 Pass as trailing variadic arguments:
 
 ```go
-bitpack.Unmarshal(data, &out, bitpack.BigEndian)
-bitpack.Marshal(&in, bitpack.LittleEndian)
+nibble.Unmarshal(data, &out, nibble.BigEndian)
+nibble.Marshal(&in, nibble.LittleEndian)
 ```
 
 ### Error types
@@ -161,31 +161,31 @@ bitpack.Marshal(&in, bitpack.LittleEndian)
 All errors wrap these sentinels so `errors.Is` works:
 
 ```go
-if errors.Is(err, bitpack.ErrFieldOverflow) { ... }
+if errors.Is(err, nibble.ErrFieldOverflow) { ... }
 ```
 
 ## Endianness explained
 
-`bitpack` operates at the **bit-stream** level, not the byte level.
+`nibble` operates at the **bit-stream** level, not the byte level.
 
 | Mode          | Bit-stream → byte layout                        |
 |---------------|--------------------------------------------------|
 | `LittleEndian`| Stream bit 0 → LSB of byte 0 (bit 0 of byte 0) |
 | `BigEndian`   | Stream bit 0 → MSB of byte 0 (bit 7 of byte 0) |
 
-For multi-bit fields, `LittleEndian` places the field's LSB at the lower stream position; `BigEndian` places the field's MSB there.  Use `BigEndian` for all IETF/network protocols.
+For multi-bit fields, `LittleEndian` places the field's LSB at the lower stream position; `BigEndian` places the field's MSB there. Use `BigEndian` for all IETF/network protocols.
 
 ## Comparison with existing libraries
 
-| Feature                        | bitpack | encoding/binary | manual bit-shifts |
-|--------------------------------|---------|-----------------|-------------------|
-| Sub-byte field widths          | ✅      | ❌              | ✅                |
-| Declarative struct tags        | ✅      | ❌              | ❌                |
-| Signed integers                | ✅      | ✅              | manual            |
-| Human-readable explain         | ✅      | ❌              | ❌                |
-| Field diff                     | ✅      | ❌              | ❌                |
-| Overflow validation            | ✅      | ❌              | manual            |
-| Zero dependencies              | ✅      | ✅              | ✅                |
+| Feature                        | nibble | encoding/binary | manual bit-shifts |
+|--------------------------------|--------|-----------------|-------------------|
+| Sub-byte field widths          | ✅     | ❌              | ✅                |
+| Declarative struct tags        | ✅     | ❌              | ❌                |
+| Signed integers                | ✅     | ✅              | manual            |
+| Human-readable explain         | ✅     | ❌              | ❌                |
+| Field diff                     | ✅     | ❌              | ❌                |
+| Overflow validation            | ✅     | ❌              | manual            |
+| Zero dependencies              | ✅     | ✅              | ✅                |
 
 ## Examples
 

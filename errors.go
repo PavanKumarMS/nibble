@@ -1,4 +1,4 @@
-package bitpack
+package nibble
 
 import (
 	"errors"

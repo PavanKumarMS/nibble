@@ -1,4 +1,4 @@
-package bitpack
+package nibble
 
 // readBit returns the bit at stream position pos.
 //
