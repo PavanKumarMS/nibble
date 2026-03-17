@@ -10,8 +10,6 @@ Working with binary protocols often means hand-rolling bit-shift arithmetic scat
 go get github.com/PavanKumarMS/nibble
 ```
 
-Import as:
-
 ```go
 import "github.com/PavanKumarMS/nibble"
 ```
@@ -58,12 +56,23 @@ Byte 0 [00010010]:
 
 ## Struct tag format
 
+Annotate each field with `` `bits:"N"` `` where N is the number of bits it occupies in the packed byte stream.
+
 ```go
 type GamePacket struct {
     IsAlive  bool   `bits:"1"`   // 1 bit  — boolean flag
-    WeaponID uint8  `bits:"4"`   // 4 bits — values 0-15
-    TeamID   uint8  `bits:"2"`   // 2 bits — values 0-3
-    Health   uint16 `bits:"9"`   // 9 bits — values 0-511
+    WeaponID uint8  `bits:"4"`   // 4 bits — values 0–15
+    TeamID   uint8  `bits:"2"`   // 2 bits — values 0–3
+    Health   uint16 `bits:"9"`   // 9 bits — values 0–511
+}
+```
+
+Signed integer fields use two's complement automatically:
+
+```go
+type Delta struct {
+    DX int8  `bits:"4"` // range [-8, 7]
+    DY int8  `bits:"4"` // range [-8, 7]
 }
 ```
 
@@ -71,23 +80,23 @@ Fields are packed in **declaration order**. Bit positions within a byte follow t
 
 ### Supported field types
 
-| Go type              | Max bits |
-|----------------------|----------|
-| `bool`               | 1        |
-| `uint8`              | 8        |
-| `uint16`             | 16       |
-| `uint32`             | 32       |
-| `uint64`             | 64       |
-| `int8`               | 8        |
-| `int16`              | 16       |
-| `int32`              | 32       |
-| `int64`              | 64       |
-
-Signed integers use two's complement encoding automatically.
+| Go type              | Max bits | Notes                         |
+|----------------------|----------|-------------------------------|
+| `bool`               | 1        |                               |
+| `uint8`              | 8        |                               |
+| `uint16`             | 16       |                               |
+| `uint32`             | 32       |                               |
+| `uint64`             | 64       |                               |
+| `int8`               | 8        | Two's complement, auto sign-extended |
+| `int16`              | 16       | Two's complement, auto sign-extended |
+| `int32`              | 32       | Two's complement, auto sign-extended |
+| `int64`              | 64       | Two's complement, auto sign-extended |
 
 ## Performance
 
 nibble uses reflection with schema caching and byte-granularity bit I/O.
+The struct schema is parsed once per type (via `sync.Map`) — subsequent calls pay zero reflection or string-parsing cost.
+
 Benchmarked on an i7-10510U (Go 1.26, `go test -bench=. -benchmem`):
 
 | Function | ns/op | B/op | allocs/op |
@@ -98,44 +107,48 @@ Benchmarked on an i7-10510U (Go 1.26, `go test -bench=. -benchmem`):
 | `MarshalLE` (GamePacket, 2 bytes) | 84 | 2 | 1 |
 | `MarshalInto` (TCPFlags, caller buf) | 107 | **0** | **0** |
 | `MarshalInto` (GamePacket, caller buf) | 69 | **0** | **0** |
-| manual unmarshal (TCPFlags) | 0.27 | 0 | 0 |
+| manual unmarshal (reference) | 0.27 | 0 | 0 |
 
-nibble is ~400–500x slower than manual bit manipulation — the unavoidable
-cost of reflection (`reflect.Value.SetUint` etc.) — but produces **zero
-allocations** for all Unmarshal and `MarshalInto` calls.
+The single allocation in `MarshalBE`/`MarshalLE` is the returned `[]byte` itself. Use `MarshalInto` with a pooled buffer to eliminate it:
 
-The single allocation in `MarshalBE`/`MarshalLE` is the returned `[]byte`
-itself. Use `MarshalInto` with a pooled or stack-allocated buffer to
-eliminate it entirely.
+```go
+var bufPool = sync.Pool{New: func() any { return make([]byte, 64) }}
 
-At 100,000 packets/second nibble uses less than 2% of a single CPU core —
-acceptable for the vast majority of production workloads. For
-latency-critical packet-processing loops, use manual bit manipulation.
-nibble is designed for correctness, safety, and developer productivity.
+func encode(pkt *GamePacket) ([]byte, error) {
+    buf := bufPool.Get().([]byte)
+    defer bufPool.Put(buf)
+    n, err := nibble.MarshalInto(buf, pkt, false) // 0 allocs
+    if err != nil {
+        return nil, err
+    }
+    return buf[:n], nil
+}
+```
+
+At 100,000 packets/second nibble uses less than 2% of a single CPU core — acceptable for the vast majority of production workloads. For latency-critical packet-processing loops, use manual bit manipulation. nibble is designed for correctness, safety, and developer productivity.
 
 ## API reference
 
 ### `Unmarshal` / `UnmarshalBE` / `UnmarshalLE`
 
 ```go
-func Unmarshal(src []byte, dst any, opts ...Option) error  // variadic
-func UnmarshalBE(src []byte, dst any) error                // 0 allocs
-func UnmarshalLE(src []byte, dst any) error                // 0 allocs
+func Unmarshal(src []byte, dst any, opts ...Option) error  // variadic convenience
+func UnmarshalBE(src []byte, dst any) error                // BigEndian,    0 allocs
+func UnmarshalLE(src []byte, dst any) error                // LittleEndian, 0 allocs
 ```
 
-Decodes `src` into the struct pointed to by `dst`.
+Decodes `src` into the struct pointed to by `dst`. `dst` must be a non-nil pointer to a struct.
 
 ### `Marshal` / `MarshalBE` / `MarshalLE` / `MarshalInto`
 
 ```go
-func Marshal(src any, opts ...Option) ([]byte, error)              // variadic
-func MarshalBE(src any) ([]byte, error)                            // 1 alloc
-func MarshalLE(src any) ([]byte, error)                            // 1 alloc
+func Marshal(src any, opts ...Option) ([]byte, error)              // variadic convenience
+func MarshalBE(src any) ([]byte, error)                            // BigEndian,    1 alloc
+func MarshalLE(src any) ([]byte, error)                            // LittleEndian, 1 alloc
 func MarshalInto(dst []byte, src any, bigEndian bool) (int, error) // 0 allocs
 ```
 
-Encodes `src` into bytes. `MarshalInto` writes into a caller-supplied buffer
-(must be large enough) and returns the number of bytes written.
+Encodes `src` into bytes. `MarshalInto` writes into a caller-supplied buffer and returns the number of bytes written. The buffer must be at least as large as the packed struct size.
 
 ### `Explain`
 
@@ -143,7 +156,7 @@ Encodes `src` into bytes. `MarshalInto` writes into a caller-supplied buffer
 func Explain(src []byte, schema any, opts ...Option) (string, error)
 ```
 
-Returns a human-readable annotation of which bytes and bits correspond to which struct fields.
+Returns a human-readable byte-by-byte, bit-by-bit breakdown of `src` annotated with field names and values. Useful for debugging wire formats.
 
 ### `Validate`
 
@@ -151,7 +164,7 @@ Returns a human-readable annotation of which bytes and bits correspond to which 
 func Validate(src any) error
 ```
 
-Checks that every field value fits within its declared bit width. Returns `ErrFieldOverflow` on the first violation found.
+Checks that every field value in `src` fits within its declared bit width. Returns `ErrFieldOverflow` on the first violation found. Useful before sending data on the wire.
 
 ### `Diff`
 
@@ -159,7 +172,7 @@ Checks that every field value fits within its declared bit width. Returns `ErrFi
 func Diff(a, b any) ([]FieldDiff, error)
 ```
 
-Compares two structs of the same type and returns a `FieldDiff` for every field whose value changed.
+Compares two structs of the same type and returns a `FieldDiff` for every field whose value changed. Both arguments must be the same struct type.
 
 ```go
 type FieldDiff struct {
@@ -172,15 +185,21 @@ type FieldDiff struct {
 ### Options
 
 ```go
-nibble.BigEndian    // first field → MSB (network byte order)
-nibble.LittleEndian // first field → LSB (default)
+nibble.BigEndian    // first struct field → MSB of first byte (network byte order)
+nibble.LittleEndian // first struct field → LSB of first byte (default)
 ```
 
-Pass as trailing variadic arguments:
+Pass as a trailing argument to the variadic functions, or use the named `BE`/`LE` variants for zero allocations:
 
 ```go
+// variadic (convenience)
 nibble.Unmarshal(data, &out, nibble.BigEndian)
 nibble.Marshal(&in, nibble.LittleEndian)
+
+// named — preferred in hot paths
+nibble.UnmarshalBE(data, &out)
+nibble.MarshalLE(&in)
+nibble.MarshalInto(buf, &in, true /* bigEndian */)
 ```
 
 ### Error types
@@ -202,12 +221,12 @@ if errors.Is(err, nibble.ErrFieldOverflow) { ... }
 
 `nibble` operates at the **bit-stream** level, not the byte level.
 
-| Mode          | Bit-stream → byte layout                        |
+| Mode          | Bit-stream → byte layout                         |
 |---------------|--------------------------------------------------|
-| `LittleEndian`| Stream bit 0 → LSB of byte 0 (bit 0 of byte 0) |
-| `BigEndian`   | Stream bit 0 → MSB of byte 0 (bit 7 of byte 0) |
+| `LittleEndian`| Stream bit 0 → LSB of byte 0 (bit 0 of byte 0)  |
+| `BigEndian`   | Stream bit 0 → MSB of byte 0 (bit 7 of byte 0)  |
 
-For multi-bit fields, `LittleEndian` places the field's LSB at the lower stream position; `BigEndian` places the field's MSB there. Use `BigEndian` for all IETF/network protocols.
+For multi-bit fields, `LittleEndian` places the field's LSB at the lower stream position; `BigEndian` places the field's MSB there. Use `BigEndian` for all IETF/network protocols (TCP, UDP, DNS, etc.).
 
 ## Comparison with existing libraries
 
@@ -215,10 +234,12 @@ For multi-bit fields, `LittleEndian` places the field's LSB at the lower stream 
 |--------------------------------|--------|-----------------|-------------------|
 | Sub-byte field widths          | ✅     | ❌              | ✅                |
 | Declarative struct tags        | ✅     | ❌              | ❌                |
-| Signed integers                | ✅     | ✅              | manual            |
+| Signed integers (auto)         | ✅     | ✅              | manual            |
 | Human-readable explain         | ✅     | ❌              | ❌                |
 | Field diff                     | ✅     | ❌              | ❌                |
 | Overflow validation            | ✅     | ❌              | manual            |
+| Zero-alloc unmarshal           | ✅     | ✅              | ✅                |
+| Zero-alloc marshal             | ✅ (`MarshalInto`) | ✅ | ✅          |
 | Zero dependencies              | ✅     | ✅              | ✅                |
 
 ## Examples
@@ -233,6 +254,22 @@ examples/game/main.go  — 16-bit compact game-state packet
 ```bash
 go run ./examples/tcp/
 go run ./examples/game/
+```
+
+## Testing and benchmarks
+
+```bash
+# Run all tests
+go test ./...
+
+# Run tests with verbose output
+go test ./... -v
+
+# Run benchmarks
+go test -bench=. -benchmem ./...
+
+# Run benchmarks for 10 seconds each (more stable numbers)
+go test -bench=. -benchmem -benchtime=10s ./...
 ```
 
 ## Contributing

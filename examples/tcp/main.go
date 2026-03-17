@@ -22,12 +22,12 @@ type TCPFlags struct {
 }
 
 func main() {
-	// ── Decode a raw TCP flags byte ──────────────────────────────────────
+	// ── Decode a raw TCP flags byte (zero allocations) ────────────────────
 	// 0x12 = 0b00010010 → ACK + SYN set
 	raw := []byte{0x12}
 
 	var flags TCPFlags
-	if err := nibble.Unmarshal(raw, &flags, nibble.BigEndian); err != nil {
+	if err := nibble.UnmarshalBE(raw, &flags); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Decoded flags: %+v\n", flags)
@@ -41,22 +41,29 @@ func main() {
 	fmt.Println("\nExplain:")
 	fmt.Print(explanation)
 
-	// ── Encode back to bytes ──────────────────────────────────────────────
-	encoded, err := nibble.Marshal(&flags, nibble.BigEndian)
+	// ── Encode back to bytes (one allocation for the returned []byte) ─────
+	encoded, err := nibble.MarshalBE(&flags)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("\nRe-encoded: 0x%02x\n", encoded[0])
+
+	// ── Encode into a caller-supplied buffer (zero allocations) ──────────
+	buf := make([]byte, 1)
+	if _, err := nibble.MarshalInto(buf, &flags, true); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("MarshalInto: 0x%02x\n", buf[0])
 
 	// ── Build a SYN packet and validate it ────────────────────────────────
 	synPacket := TCPFlags{SYN: true}
 	if err := nibble.Validate(&synPacket); err != nil {
 		log.Fatal(err)
 	}
-	synBytes, _ := nibble.Marshal(&synPacket, nibble.BigEndian)
+	synBytes, _ := nibble.MarshalBE(&synPacket)
 	fmt.Printf("SYN-only byte: 0x%02x\n", synBytes[0]) // 0x02
 
-	// ── Diff two packets ─────────────────────────────────────────────────
+	// ── Diff two packets ──────────────────────────────────────────────────
 	synAck := TCPFlags{SYN: true, ACK: true}
 	diffs, err := nibble.Diff(synPacket, synAck)
 	if err != nil {

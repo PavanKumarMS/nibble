@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/PavanKumarMS/nibble"
 )
@@ -22,6 +23,9 @@ type GamePacket struct {
 	Health   uint16 `bits:"9"`
 }
 
+// bufPool is a sync.Pool for zero-alloc encoding in hot paths.
+var bufPool = sync.Pool{New: func() any { return make([]byte, 2) }}
+
 func main() {
 	// ── Build a packet ────────────────────────────────────────────────────
 	pkt := GamePacket{
@@ -35,15 +39,25 @@ func main() {
 		log.Fatalf("invalid packet: %v", err)
 	}
 
-	data, err := nibble.Marshal(&pkt, nibble.LittleEndian)
+	// ── Encode using MarshalLE (1 alloc — the returned []byte) ───────────
+	data, err := nibble.MarshalLE(&pkt)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Encoded (%d bytes): %08b\n", len(data), data)
 
-	// ── Decode it back ───────────────────────────────────────────────────
+	// ── Zero-alloc encode using MarshalInto + sync.Pool ──────────────────
+	buf := bufPool.Get().([]byte)
+	n, err := nibble.MarshalInto(buf, &pkt, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("MarshalInto (%d bytes): %08b\n", n, buf[:n])
+	bufPool.Put(buf)
+
+	// ── Decode (zero allocations) ─────────────────────────────────────────
 	var decoded GamePacket
-	if err := nibble.Unmarshal(data, &decoded, nibble.LittleEndian); err != nil {
+	if err := nibble.UnmarshalLE(data, &decoded); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Printf("Decoded: %+v\n", decoded)
