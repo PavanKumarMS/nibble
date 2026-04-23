@@ -80,7 +80,12 @@ func resolveStruct(src any) (reflect.Value, *schema, error) {
 func marshalFields(buf []byte, rv reflect.Value, s *schema, bigEndian bool) error {
 	for i := range s.Fields {
 		cf := &s.Fields[i]
-		fv := rv.Field(cf.Index)
+
+		if cf.IsPad {
+			continue
+		}
+
+		fv := fieldVal(rv, cf)
 
 		var raw uint64
 		switch cf.Kind {

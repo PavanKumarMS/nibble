@@ -6,14 +6,16 @@ import (
 )
 
 // cachedField is a pre-computed, allocation-free representation of one struct
-// field.  Every value that would otherwise be recalculated on every
+// field. Every value that would otherwise be recalculated on every
 // marshal/unmarshal call is computed exactly once here.
 type cachedField struct {
 	Name        string
-	Index       int
+	FieldPath   []int        // reflect index path (supports nested structs)
+	ArrayIdx    int          // -1 for scalars; >=0 for array element index
 	BitOffset   int          // cumulative bit position in the packed stream
 	BitWidth    int
 	Kind        reflect.Kind
+	IsPad       bool   // padding: consume bits but don't read/write
 	Mask        uint64 // (1<<BitWidth)-1  — extract / overflow-check mask
 	IsSigned    bool
 	SignBit     uint64 // 1<<(BitWidth-1)  — sign-extension test
@@ -54,24 +56,28 @@ func getSchema(t reflect.Type) (*schema, error) {
 
 		cf := cachedField{
 			Name:      f.Name,
-			Index:     f.Index,
+			FieldPath: f.FieldPath,
+			ArrayIdx:  f.ArrayIdx,
 			BitOffset: offset,
 			BitWidth:  f.BitWidth,
 			Kind:      f.Kind,
+			IsPad:     f.IsPad,
 			Mask:      mask,
 		}
 
-		switch f.Kind {
-		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			cf.IsSigned = true
-			cf.SignBit = 1 << (f.BitWidth - 1)
-			cf.SignExtMask = ^mask
-			if f.BitWidth < 64 {
-				cf.MinVal = -(int64(1) << (f.BitWidth - 1))
-				cf.MaxVal = int64(1)<<(f.BitWidth-1) - 1
-			} else {
-				cf.MinVal = -1 << 63
-				cf.MaxVal = 1<<63 - 1
+		if !f.IsPad {
+			switch f.Kind {
+			case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				cf.IsSigned = true
+				cf.SignBit = 1 << (f.BitWidth - 1)
+				cf.SignExtMask = ^mask
+				if f.BitWidth < 64 {
+					cf.MinVal = -(int64(1) << (f.BitWidth - 1))
+					cf.MaxVal = int64(1)<<(f.BitWidth-1) - 1
+				} else {
+					cf.MinVal = -1 << 63
+					cf.MaxVal = 1<<63 - 1
+				}
 			}
 		}
 
@@ -85,4 +91,14 @@ func getSchema(t reflect.Type) (*schema, error) {
 	}
 	schemaCache.Store(t, s)
 	return s, nil
+}
+
+// fieldVal returns the reflect.Value for a cachedField within rv.
+// For array elements, it indexes into the array after following the field path.
+func fieldVal(rv reflect.Value, cf *cachedField) reflect.Value {
+	fv := rv.FieldByIndex(cf.FieldPath)
+	if cf.ArrayIdx >= 0 {
+		fv = fv.Index(cf.ArrayIdx)
+	}
+	return fv
 }

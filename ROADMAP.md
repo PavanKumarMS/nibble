@@ -6,10 +6,10 @@ This document tracks planned features and future directions for the library.
 
 ## v0.2 — Quality of life
 
-- [ ] **Streaming encoder/decoder** — `bitpack.NewReader(r io.Reader)` / `bitpack.NewWriter(w io.Writer)` for incremental processing of large binary streams without loading the entire payload into memory.
-- [ ] **Nested structs** — allow embedding another bitpack struct as a field, so protocol layers can be composed naturally (e.g. an IP header containing a TCP header).
-- [ ] **Array fields** — `[N]T` field support with a single `bits:"W"` tag applying to each element.
-- [ ] **Skip/padding fields** — `bits:"-"` or a blank identifier field to skip reserved/padding bits without consuming a named field.
+- [x] **Streaming encoder/decoder** — `nibble.NewReader(r io.Reader)` / `nibble.NewWriter(w io.Writer)` for incremental processing of large binary streams without loading the entire payload into memory.
+- [x] **Nested structs** — allow embedding another nibble struct as a field, so protocol layers can be composed naturally (e.g. an IP header containing a TCP header).
+- [x] **Array fields** — `[N]T` field support with a single `bits:"W"` tag applying to each element.
+- [x] **Skip/padding fields** — `bits:"-"` excludes a field entirely; `_ T \`bits:"N"\`` consumes N bits as reserved padding without a named field.
 
 ## v0.3 — Schema DSL
 
