@@ -47,6 +47,10 @@ func unmarshal(src []byte, dst any, bigEndian bool) error {
 	for i := range s.Fields {
 		cf := &s.Fields[i]
 
+		if cf.IsPad {
+			continue
+		}
+
 		var raw uint64
 		if bigEndian {
 			raw = readBitsBE(src, cf.BitOffset, cf.BitWidth)
@@ -54,7 +58,7 @@ func unmarshal(src []byte, dst any, bigEndian bool) error {
 			raw = readBitsLE(src, cf.BitOffset, cf.BitWidth)
 		}
 
-		fv := rv.Field(cf.Index)
+		fv := fieldVal(rv, cf)
 		switch cf.Kind {
 		case reflect.Bool:
 			fv.SetBool(raw != 0)

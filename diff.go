@@ -35,8 +35,11 @@ func Diff(a, b any) ([]FieldDiff, error) {
 	var diffs []FieldDiff
 	for i := range s.Fields {
 		cf := &s.Fields[i]
-		va := ra.Field(cf.Index).Interface()
-		vb := rb.Field(cf.Index).Interface()
+		if cf.IsPad {
+			continue
+		}
+		va := fieldVal(ra, cf).Interface()
+		vb := fieldVal(rb, cf).Interface()
 		if !reflect.DeepEqual(va, vb) {
 			diffs = append(diffs, FieldDiff{
 				Field:  cf.Name,

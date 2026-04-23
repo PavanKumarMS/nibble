@@ -28,7 +28,10 @@ func Validate(src any) error {
 
 	for i := range s.Fields {
 		cf := &s.Fields[i]
-		fv := rv.Field(cf.Index)
+		if cf.IsPad {
+			continue
+		}
+		fv := fieldVal(rv, cf)
 
 		switch cf.Kind {
 		case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
