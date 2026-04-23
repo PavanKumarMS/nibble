@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ["1.22", "1.23"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Download modules
+        run: go mod download
+
+      # --- correctness ---
+      - name: Test
+        run: go test -v -count=1 -race ./...
+
+      # --- static analysis ---
+      - name: Vet
+        run: go vet ./...
+
+      # --- zero-alloc guarantee: Unmarshal and MarshalInto must report 0 allocs ---
+      - name: Benchmark allocs (UnmarshalBE)
+        run: |
+          go test -run='^$' -bench=BenchmarkUnmarshalBE_TCPFlags -benchmem -count=5 \
+            | tee /tmp/bench_unmarshal.txt
+          if grep -E '[1-9][0-9]* allocs/op' /tmp/bench_unmarshal.txt; then
+            echo "::error::UnmarshalBE allocates — zero-alloc guarantee broken"
+            exit 1
+          fi
+
+      - name: Benchmark allocs (UnmarshalLE)
+        run: |
+          go test -run='^$' -bench=BenchmarkUnmarshalLE_GamePacket -benchmem -count=5 \
+            | tee /tmp/bench_unmarshal_le.txt
+          if grep -E '[1-9][0-9]* allocs/op' /tmp/bench_unmarshal_le.txt; then
+            echo "::error::UnmarshalLE allocates — zero-alloc guarantee broken"
+            exit 1
+          fi
+
+      - name: Benchmark allocs (MarshalInto)
+        run: |
+          go test -run='^$' -bench=BenchmarkMarshalInto -benchmem -count=5 \
+            | tee /tmp/bench_marshalinto.txt
+          if grep -E '[1-9][0-9]* allocs/op' /tmp/bench_marshalinto.txt; then
+            echo "::error::MarshalInto allocates — zero-alloc guarantee broken"
+            exit 1
+          fi
